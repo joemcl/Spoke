@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql/error'
-
 import { r } from '../models'
+import { userHasRole } from '../models/cacheable-queries'
 
 const accessHierarchy = ['TEXTER', 'SUPERVOLUNTEER', 'ADMIN', 'OWNER']
 
@@ -10,17 +10,6 @@ export function authRequired(user) {
       status: 401,
       message: 'You must login to access that resource.'
     })
-  }
-}
-
-export async function hasRole(userId, orgId, role) {
-  if (role) {
-    const userHasRole = await r.table('user_organization').filter({
-      user_id: userId,
-      organization_id: orgId,
-      role
-    }).limit(1)(0).default(null)
-    return userHasRole
   }
 }
 
@@ -34,17 +23,9 @@ export async function accessRequired(user, orgId, role, allowSuperadmin = false)
   }
   // require a permission at-or-higher than the permission requested
   const acceptableRoles = accessHierarchy.slice(accessHierarchy.indexOf(role))
-  const userHasRole = await r.getCount(
-    r.knex('user_organization')
-      .where({ user_id: user.id,
-               organization_id: orgId })
-      .whereIn('role', acceptableRoles)
-  )
-  if (!userHasRole) {
-    throw new GraphQLError({
-      status: 403,
-      message: 'You are not authorized to access that resource.'
-    })
+  const hasRole = await userHasRole(user.id, orgId, acceptableRoles)
+  if (!hasRole) {
+    throw new GraphQLError('You are not authorized to access that resource.')
   }
 }
 
@@ -62,10 +43,7 @@ export async function assignmentRequired(user, assignmentId) {
   }).limit(1)
 
   if (typeof assignment === 'undefined') {
-    throw new GraphQLError({
-      status: 403,
-      message: 'You are not authorized to access that resource.'
-    })
+    throw new GraphQLError('You are not authorized to access that resource.')
   }
 }
 
@@ -73,9 +51,6 @@ export function superAdminRequired(user) {
   authRequired(user)
 
   if (!user.is_superadmin) {
-    throw new GraphQLError({
-      status: 403,
-      message: 'You are not authorized to access that resource.'
-    })
+    throw new GraphQLError('You are not authorized to access that resource.')
   }
 }
